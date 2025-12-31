@@ -1,6 +1,7 @@
 import pygame
 import numpy as np
 from core.config import *
+from core.model import NeuralNetwork
 from data.levels import LEVELS, ActivationLayer
 
 class Node:
@@ -151,7 +152,7 @@ class LevelScreen:
         self._initialize_layout()
         self._initialize_nodes_and_layers()
         self._initialize_state()
-        self._generate_training_data()
+        self.network = NeuralNetwork(level_id, self.level.dataset)
         self.on_level_complete = None
 
     def _initialize_layout(self):
@@ -190,57 +191,10 @@ class LevelScreen:
         self.last_width = 0
         self.last_height = 0
 
-    def _generate_training_data(self):
-        np.random.seed(42)
-        
-        if self.level_id == "level_1":
-            self.X_train = np.random.uniform(-np.pi, np.pi, (1000, 1))
-            self.y_train = np.sin(self.X_train)
-            
-            self.X_test = np.random.uniform(-np.pi, np.pi, (200, 1))
-            self.y_test = np.sin(self.X_test)
-        
-        elif self.level_id == "level_2":
-            n_train = 800
-            n_test = 200
-            n_classes = 3
-            
-            self.X_train = np.random.randn(n_train, 2)
-            centers = np.array([[2, 2], [-2, -2], [2, -2]])
-            y_labels = np.random.randint(0, n_classes, n_train)
-            
-            for i in range(n_train):
-                self.X_train[i] += centers[y_labels[i]] + np.random.randn(2) * 0.5
-            
-            self.y_train = np.zeros((n_train, n_classes))
-            self.y_train[np.arange(n_train), y_labels] = 1
-            
-            self.X_test = np.random.randn(n_test, 2)
-            y_test_labels = np.random.randint(0, n_classes, n_test)
-            
-            for i in range(n_test):
-                self.X_test[i] += centers[y_test_labels[i]] + np.random.randn(2) * 0.5
-            
-            self.y_test = np.zeros((n_test, n_classes))
-            self.y_test[np.arange(n_test), y_test_labels] = 1
-        
-        elif self.level_id == "level_3":
-            self.X_train = np.random.uniform(-3, 3, (1200, 1))
-            self.y_train = self.X_train * np.sin(self.X_train ** 2) + np.cos(self.X_train * 2) * 0.5
-            
-            self.X_test = np.random.uniform(-3, 3, (300, 1))
-            self.y_test = self.X_test * np.sin(self.X_test ** 2) + np.cos(self.X_test * 2) * 0.5
-        
-        else:
-            self.X_train = np.random.uniform(-np.pi, np.pi, (1000, 1))
-            self.y_train = np.sin(self.X_train)
-            
-            self.X_test = np.random.uniform(-np.pi, np.pi, (200, 1))
-            self.y_test = np.sin(self.X_test)
-
     def update(self, dt):
         if self.training and self.epoch < self.max_epochs:
-            mse_loss, l1_loss, ce_loss = self._train_step()
+            sorted_layers = self._get_sorted_layers()
+            mse_loss, l1_loss, ce_loss = self.network.train_step(sorted_layers)
             self.loss_history.append(mse_loss)
             self.l1_history.append(l1_loss)
             self.ce_history.append(ce_loss)
@@ -832,7 +786,8 @@ class LevelScreen:
         self.model_run = False
         self.model_tested = False
         self._update_layer_sizes()
-        self._initialize_network()
+        sorted_layers = self._get_sorted_layers()
+        self.network.initialize_network(sorted_layers)
 
     def _validate_network(self):
         if not self.connections:
@@ -843,104 +798,9 @@ class LevelScreen:
         
         return input_connected and output_connected
 
-    def _initialize_network(self):
-        self.weights = []
-        self.biases = []
-        
-        sorted_layers = self._get_sorted_layers()
-        layer_sizes = [self.level.dataset.input_features]
-        for layer in sorted_layers:
-            layer_sizes.append(layer.output_size)
-        layer_sizes.append(self.level.dataset.output_classes)
-        
-        for i in range(len(layer_sizes) - 1):
-            w = np.random.randn(layer_sizes[i], layer_sizes[i + 1]) * 0.1
-            b = np.zeros((1, layer_sizes[i + 1]))
-            self.weights.append(w)
-            self.biases.append(b)
-
-    def _apply_activation(self, x, activation):
-        if activation == ActivationLayer.RELU:
-            return np.maximum(0, x)
-        elif activation == ActivationLayer.TANH:
-            return np.tanh(x)
-        elif activation == ActivationLayer.SOFTMAX:
-            exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-            return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-        elif activation == ActivationLayer.SIGMOID:
-            return 1 / (1 + np.exp(-x))
-        return x
-
-    def _activation_derivative(self, x, activation):
-        if activation == ActivationLayer.RELU:
-            return (x > 0).astype(float)
-        elif activation == ActivationLayer.TANH:
-            return 1 - np.tanh(x) ** 2
-        elif activation == ActivationLayer.SIGMOID:
-            sig = 1 / (1 + np.exp(-x))
-            return sig * (1 - sig)
-        return np.ones_like(x)
-
-    def _train_step(self):
-        learning_rate = 0.05
-        batch_size = 32
-        
-        indices = np.random.choice(len(self.X_train), batch_size, replace=False)
-        X_batch = self.X_train[indices]
-        y_batch = self.y_train[indices]
-        
-        sorted_layers = self._get_sorted_layers()
-        activations = [X_batch]
-        zs = []
-        
-        for i in range(len(self.weights)):
-            z = activations[-1] @ self.weights[i] + self.biases[i]
-            zs.append(z)
-            if i < len(sorted_layers):
-                a = self._apply_activation(z, sorted_layers[i].activation)
-            else:
-                a = z
-            activations.append(a)
-        
-        predictions = activations[-1]
-        mse_loss = np.mean((predictions - y_batch) ** 2)
-        l1_loss = np.mean(np.abs(predictions - y_batch))
-        
-        predictions_clipped = np.clip(predictions, 1e-7, 1 - 1e-7)
-        y_clipped = np.clip(y_batch, 1e-7, 1 - 1e-7)
-        ce_loss = -np.mean(y_clipped * np.log(predictions_clipped) + (1 - y_clipped) * np.log(1 - predictions_clipped))
-        
-        delta = 2 * (predictions - y_batch) / batch_size
-        for i in range(len(self.weights) - 1, -1, -1):
-            self.weights[i] -= learning_rate * (activations[i].T @ delta)
-            self.biases[i] -= learning_rate * np.sum(delta, axis=0, keepdims=True)
-            if i > 0:
-                if i - 1 < len(sorted_layers):
-                    delta = (delta @ self.weights[i].T) * self._activation_derivative(zs[i-1], sorted_layers[i-1].activation)
-                else:
-                    delta = delta @ self.weights[i].T
-        
-        return mse_loss, l1_loss, ce_loss
-
     def _evaluate_model(self):
         sorted_layers = self._get_sorted_layers()
-        activations = self.X_test
-        for i in range(len(self.weights)):
-            z = activations @ self.weights[i] + self.biases[i]
-            if i < len(sorted_layers):
-                activations = self._apply_activation(z, sorted_layers[i].activation)
-            else:
-                activations = z
-        
-        predictions = activations
-        
-        if self.level.dataset.output_classes > 1:
-            predicted_classes = np.argmax(predictions, axis=1)
-            true_classes = np.argmax(self.y_test, axis=1)
-            self.accuracy = np.mean(predicted_classes == true_classes)
-        else:
-            mse = np.mean((predictions - self.y_test) ** 2)
-            self.accuracy = max(0, 1 - mse)
+        self.accuracy = self.network.evaluate(sorted_layers)
 
     def _update_cost(self):
         self.total_cost = sum(10.0 + layer.output_size * 0.1 for layer in self.layers)
