@@ -1,31 +1,12 @@
 from dataclasses import dataclass
-from enum import Enum
-
-class ActivationLayer(Enum):
-    LINEAR = "Linear"
-    SOFTMAX = "Softmax"
-    RELU = "ReLU"
-    SIGMOID = "Sigmoid"
-    TANH = "Tanh"
-
-class OperationType(Enum):
-    ADD = "Add"
-    MULTIPLY = "Multiply"
-
-class LayerType(Enum):
-    INPUT = "Input"
-    HIDDEN = "Hidden"
-    OUTPUT = "Output"
-    CONV = "Conv"
-    MAXPOOL = "MaxPool"
-    FLATTEN = "Flatten"
-    DENSE = "Dense"
+from typing import List, Callable, Tuple
+import numpy as np
+from data.layers import *
 
 @dataclass
-class LevelGoals:
-    accuracy_target: float
-    time_limit_seconds: int
-    cost_limit: float
+class LevelTarget:
+    accuracy: float
+    cost: float
 
 @dataclass
 class DatasetInfo:
@@ -34,110 +15,78 @@ class DatasetInfo:
     test_samples: int
     input_features: int
     output_classes: int
+    generator: Callable[[int, int, int], Tuple[np.ndarray, np.ndarray]]
+    
+    def generate_data(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        np.random.seed(42)
+        X_train, y_train = self.generator(self.train_samples, self.input_features, self.output_classes)
+        X_test, y_test = self.generator(self.test_samples, self.input_features, self.output_classes)
+        return X_train, y_train, X_test, y_test
 
 @dataclass
 class Level:
-    id: str
     name: str
-    description: str
     position: tuple
     dataset: DatasetInfo
-    goals: LevelGoals
-    available_activations: list
-    available_layers: list
-    available_operations: list
-    is_completed: bool
-    is_unlocked: bool
+    goals: LevelTarget
+    available_layers: List[Enum]
+    completed: bool
+    unlocked: bool
 
 LEVELS = {
     "level_1": Level(
-        id="level_1",
         name="Getting Started",
-        description="Learn the basics with a simple classification task",
         position=(400, 400),
         dataset=DatasetInfo(
-            name="MNIST_Simple",
+            name="SinWave",
             train_samples=10000,
             test_samples=2000,
             input_features=1,
-            output_classes=1
+            output_classes=1,
+            generator=lambda n_samples, n_features, n_classes: (
+                lambda X: (X, np.sin(X))
+            )(np.random.uniform(-np.pi, np.pi, (n_samples, n_features)))
         ),
-        goals=LevelGoals(
-            accuracy_target=0.85,
-            time_limit_seconds=120,
-            cost_limit=50.0
+        goals=LevelTarget(
+            accuracy=0.85,
+            cost=50.0
         ),
-        available_activations=[ActivationLayer.LINEAR, ActivationLayer.TANH],
-        available_layers=[LayerType.INPUT, LayerType.OUTPUT],
-        available_operations=[],
-        is_completed=False,
-        is_unlocked=True
+        available_layers=[ActivationLayer.LINEAR, ActivationLayer.TANH],
+        completed=False,
+        unlocked=True
     ),
     "level_2": Level(
-        id="level_2",
         name="Probability Distribution",
-        description="Model probability distributions across multiple classes",
         position=(900, 400),
         dataset=DatasetInfo(
-            name="MultiClass",
+            name="GaussianClusters",
             train_samples=800,
             test_samples=200,
             input_features=2,
-            output_classes=3
+            output_classes=3,
+            generator=lambda n_samples, n_features, n_classes: (
+                lambda X, centers, labels: (
+                    X + centers[labels] + np.random.randn(n_samples, n_features) * 0.5,
+                    np.eye(n_classes)[labels]
+                )
+            )(
+                np.random.randn(n_samples, n_features),
+                np.array([
+                    (lambda angle: np.concatenate([
+                        [3 * np.cos(angle), 3 * np.sin(angle)],
+                        np.random.randn(max(0, n_features - 2))
+                    ])[:n_features])(2 * np.pi * i / n_classes)
+                    for i in range(n_classes)
+                ]),
+                np.random.randint(0, n_classes, n_samples)
+            )
         ),
-        goals=LevelGoals(
-            accuracy_target=0.80,
-            time_limit_seconds=120,
-            cost_limit=60.0
+        goals=LevelTarget(
+            accuracy=0.80,
+            cost=60.0
         ),
-        available_activations=[ActivationLayer.LINEAR, ActivationLayer.TANH, ActivationLayer.SOFTMAX],
-        available_layers=[LayerType.INPUT, LayerType.OUTPUT],
-        available_operations=[],
-        is_completed=False,
-        is_unlocked=False
-    ),
-    "level_3": Level(
-        id="level_3",
-        name="Advanced Regression",
-        description="Approximate a complex non-linear function",
-        position=(1400, 400),
-        dataset=DatasetInfo(
-            name="ComplexFunc",
-            train_samples=1200,
-            test_samples=300,
-            input_features=1,
-            output_classes=1
-        ),
-        goals=LevelGoals(
-            accuracy_target=0.88,
-            time_limit_seconds=150,
-            cost_limit=80.0
-        ),
-        available_activations=[ActivationLayer.LINEAR, ActivationLayer.TANH, ActivationLayer.SOFTMAX],
-        available_layers=[LayerType.INPUT, LayerType.HIDDEN, LayerType.OUTPUT],
-        available_operations=[OperationType.ADD],
-        is_completed=False,
-        is_unlocked=False
+        available_layers=[ActivationLayer.LINEAR, ActivationLayer.TANH, ActivationLayer.SOFTMAX],
+        completed=False,
+        unlocked=False
     )
-}
-
-CHECKPOINTS = {
-    "checkpoint_1": {
-        "id": "checkpoint_1",
-        "name": "Softmax Unlocked",
-        "description": "You now have access to Softmax activation",
-        "position": (650, 400),
-        "unlocks": [ActivationLayer.SOFTMAX],
-        "required_level": "level_1",
-        "is_unlocked": False
-    },
-    "checkpoint_2": {
-        "id": "checkpoint_2",
-        "name": "Add Block Unlocked",
-        "description": "You now have access to Add operation blocks",
-        "position": (1150, 400),
-        "unlocks": [OperationType.ADD],
-        "required_level": "level_2",
-        "is_unlocked": False
-    }
 }

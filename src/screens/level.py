@@ -1,7 +1,7 @@
 import pygame
 import numpy as np
 from core.config import *
-from data.levels import LEVELS, ActivationLayer, OperationType
+from data.levels import LEVELS, ActivationLayer
 
 class Node:
     def __init__(self, node_id, x, y, node_type, input_size=None):
@@ -304,12 +304,12 @@ class LevelScreen:
     def _draw_progress_metrics(self, width):
         y_offset = 60
         
-        cost_text = f"Cost: ${self.total_cost:.1f} / ${self.level.goals.cost_limit:.1f}"
+        cost_text = f"Cost: ${self.total_cost:.1f} / ${self.level.goals.cost:.1f}"
         text = self.font_small.render(cost_text, True, TEXT_COLOR)
         self.screen.blit(text, (10, y_offset))
         
         y_offset = 80
-        accuracy_text = f"Accuracy: {self.accuracy * 100:.1f}% / {self.level.goals.accuracy_target * 100:.1f}%"
+        accuracy_text = f"Accuracy: {self.accuracy * 100:.1f}% / {self.level.goals.accuracy * 100:.1f}%"
         text = self.font_small.render(accuracy_text, True, TEXT_COLOR)
         self.screen.blit(text, (10, y_offset))
 
@@ -336,8 +336,8 @@ class LevelScreen:
             self.screen.blit(status_text, text_rect)
 
     def _is_level_passed(self):
-        return (self.accuracy >= self.level.goals.accuracy_target and
-                self.total_cost <= self.level.goals.cost_limit and
+        return (self.accuracy >= self.level.goals.accuracy and
+                self.total_cost <= self.level.goals.cost and
                 self.model_run)
 
     def _draw_inventory(self, width, height):
@@ -376,12 +376,8 @@ class LevelScreen:
 
     def _draw_available_layers(self, height):
         y_offset = self.progress_height + 80
-        for activation in self.level.available_activations:
-            self._draw_inventory_item(activation.value, 10, y_offset)
-            y_offset += 35
-        
-        for operation in self.level.available_operations:
-            self._draw_inventory_item(operation.value, 10, y_offset)
+        for layer in self.level.available_layers:
+            self._draw_inventory_item(layer.value, 10, y_offset)
             y_offset += 35
 
     def _draw_inventory_item(self, name, x, y):
@@ -619,17 +615,10 @@ class LevelScreen:
             return False
 
         y_offset = self.progress_height + 80
-        for activation in self.level.available_activations:
+        for layer in self.level.available_layers:
             item_rect = pygame.Rect(10, y_offset, self.inventory_width - 20, 30)
             if item_rect.collidepoint(pos):
-                self._create_layer_from_activation(activation)
-                return True
-            y_offset += 35
-        
-        for operation in self.level.available_operations:
-            item_rect = pygame.Rect(10, y_offset, self.inventory_width - 20, 30)
-            if item_rect.collidepoint(pos):
-                self._create_operation_block(operation)
+                self._create_layer_from_activation(layer)
                 return True
             y_offset += 35
 
